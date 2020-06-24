@@ -1,7 +1,5 @@
 # RealTime Backup System
 
-한글 설명은 PDF 첨부하였습니다 -> 과제 명세서
-
 [CAUTION]
 
 I'm not a native english speaker, so please consider it when you read this script.
@@ -97,4 +95,4 @@ Until the 'exit' command will be entered, the program will be running.
 
 6. 'ls' and 'vi' : these commands is same with 'ls' and 'vi' in Linux Terminal.
 
-7. 'exit' : exit the program
+7. 'exit' : exit the program - I just used 'exit()'.
