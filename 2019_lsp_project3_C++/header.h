@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <memory>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -53,7 +54,19 @@ struct Info
 //inline bool is_ascii(int ch) { return (ch >= 0 && ch <= 127); }
 
 class Worker;
-class Logger;
+
+class Logger
+{
+	public:
+		Logger();
+
+		void write_log(const std::string& file_name, std::string_view message);
+
+		virtual ~Logger();
+
+	private:
+		std::mutex mutex;
+};
 
 class Program
 {
@@ -88,6 +101,7 @@ class Program
 		std::unordered_map<std::string,pthread_t> _table;
 		std::unordered_map<std::string,Info> _info;
 		std::unordered_map<std::string,Worker> _workers;
+		std::shared_ptr<Logger> _logger;
 };
 
 class Worker
@@ -95,7 +109,7 @@ class Worker
 	public:
 		Worker() : _period(10), _option(0), _maximum_file_numbers(100) { }
 
-		Worker(const std::filesystem::path& p,int period,int opt,int mfn,int st,std::string_view cmd);
+		Worker(const std::filesystem::path& p,int period,int opt,int mfn,int st,std::string_view cmd,std::shared_ptr<Logger>& logger);
 
 		void before_get_started(long long&,const std::string&);
 
@@ -115,16 +129,7 @@ class Worker
 		int _option; // bit masking
 		int _maximum_file_numbers;
 		int _time;
-};
-
-class Logger
-{
-	public:
-		Logger() = default;
-
-		virtual ~Logger() = default;
-
-	private:
+		std::shared_ptr<Logger> _logger;
 };
 
 #endif

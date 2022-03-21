@@ -1,6 +1,6 @@
 #include "header.h"
 
-Worker::Worker(const std::filesystem::path& p,int period,int opt,int mfn,int st,std::string_view cmd) : _absolute_path(p), _period(period), _option(opt), _maximum_file_numbers(mfn), _time(st) { }
+Worker::Worker(const std::filesystem::path& p,int period,int opt,int mfn,int st,std::string_view cmd,std::shared_ptr<Logger>& logger) : _absolute_path(p), _period(period), _option(opt), _maximum_file_numbers(mfn), _time(st), _logger(logger) { }
 
 static std::string get_relative_path(std::string abs_path)
 {
@@ -52,6 +52,7 @@ void Worker::before_get_started(long long& start, const std::string& relative_pa
 		while(!v.empty() && idx < _maximum_file_numbers)
 		{
 			std::filesystem::remove(v.back());
+			_logger->write_log(v.back(),"deleted");
 			v.pop_back();
 			idx++;
 		}
@@ -95,6 +96,7 @@ void Worker::before_get_started(long long& start, const std::string& relative_pa
 			if(start-backup_time > static_cast<long long>(_time))
 			{
 				std::filesystem::remove(v.back());
+				_logger->write_log(v.back(),"deleted");
 				v.pop_back();
 				continue;
 			}
@@ -136,6 +138,7 @@ void Worker::before_get_started(long long& start, const std::string& relative_pa
 		year *= 60*60*24*30*12;
 
 		backup_time = year+month+day+hour+minute+second;
+		_logger->write_log(v[i],"added");
 		_q.push({v[i],backup_time});
 	}
 }
@@ -206,6 +209,7 @@ void Worker::operator()() // backup thread
 				{
 					auto file_path = _q.front().first;
 					std::filesystem::remove(file_path);
+					_logger->write_log(file_path.string(),"deleted");
 					_q.pop();
 				}
 			}
@@ -220,6 +224,7 @@ void Worker::operator()() // backup thread
 					if(diff > static_cast<long long>(_time))
 					{
 						std::filesystem::remove(file_path);
+						_logger->write_log(file_path.string(),"deleted");
 						_q.pop();
 						continue;
 					}
@@ -227,17 +232,15 @@ void Worker::operator()() // backup thread
 				}
 			}
 
-			// TODO : logger
 			try {
 				std::filesystem::copy_file(_absolute_path,file_name);
-				//	
 			} catch(std::filesystem::filesystem_error & e)
 			{
-				// logger error message
 				start = start+_period;
 				continue;
 			}
 
+			_logger->write_log(file_name,"generated");
 			_q.push({file_name,cur});
 			start = start+_period;
 		}

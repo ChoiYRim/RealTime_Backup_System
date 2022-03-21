@@ -17,6 +17,7 @@ static std::string get_relative_path(std::string abs_path)
 void Program::start()
 {
 	system("clear");
+	_logger = std::make_shared<Logger>(); // logger class 생성
 	make_backup_directory();
 	while(true)
 	{
@@ -93,8 +94,8 @@ bool Program::spawn_worker(int types, const std::vector<std::string>& cmds)
 		if(path.string().length() > 255) 
 			return false;
 
-		Worker worker(path, period, option, maximum_file_numbers, store_time, "add");
-		//std::thread thread(Worker(path, period, option, maximum_file_numbers, store_time,"add"));
+		Worker worker(path, period, option, maximum_file_numbers, store_time, "add",_logger);
+		_logger->write_log(path.string(), "added");
 		std::thread thread(worker);
 		_table[path.string()] = thread.native_handle();
 		_info[path.string()] = Info{period,option,maximum_file_numbers,store_time};
@@ -353,8 +354,8 @@ bool Program::add_directory(const std::filesystem::path& path,int& period,int& o
 				continue;
 			}
 
-			Worker worker(entry.path(), period, option, maximum_file_numbers, store_time, "add");
-			
+			Worker worker(entry.path(), period, option, maximum_file_numbers, store_time, "add",_logger);
+			_logger->write_log(entry.path().string(), "added");
 			std::thread thread(worker);
 			_table[entry.path().string()] = thread.native_handle();
 			_info[entry.path().string()] = Info{period,option,maximum_file_numbers,store_time};
@@ -395,6 +396,7 @@ int Program::remove(const std::vector<std::string>& cmds)
 		for(const auto& ele : delete_vector)
 		{
 			erase_worker(ele);
+			_logger->write_log(ele,"removed");
 			_table.erase(ele);
 			_info.erase(ele);
 			_workers.erase(ele);
@@ -423,6 +425,7 @@ int Program::remove(const std::vector<std::string>& cmds)
 		return 1;
 	}
 	erase_worker(target.string());
+	_logger->write_log(target.string(),"removed");
 	_table.erase(target.string());
 	_info.erase(target.string());
 	_workers.erase(target.string());
@@ -527,7 +530,8 @@ int Program::recover(const std::vector<std::string>& cmds)
 	{
 		std::string tmp = get_relative_path(backup_file);
 		tmp = tmp.substr(file_name.length()+1);
-		std::cout << idx++ << ". " << tmp << std::endl;
+		std::cout << idx++ << ". " << tmp << " ";
+		std::cout << "[" << std::filesystem::file_size(backup_file) << " bytes]" << std::endl;
 	}
 	std::cout << "Choose file to recover : ";
 	std::cin >> choose;
@@ -563,6 +567,7 @@ int Program::recover(const std::vector<std::string>& cmds)
 		}
 
 		from.close();
+		_logger->write_log(std::filesystem::absolute(file_name).string(),"recovered");
 		return 0;
 	}
 
@@ -581,6 +586,7 @@ int Program::recover(const std::vector<std::string>& cmds)
 	}
 
 	from.close();
+	_logger->write_log(std::filesystem::absolute(file_name).string(),"recovered");
 	return 0;
 }
 
