@@ -16,7 +16,7 @@ static std::string get_relative_path(std::string abs_path)
 	return result;
 }
 
-bool comp(const std::string& s1, const std::string& s2)
+static bool comp(const std::string& s1, const std::string& s2)
 {
 	std::string sr1 = get_relative_path(s1);
 	std::string sr2 = get_relative_path(s2);

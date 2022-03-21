@@ -14,6 +14,14 @@ static std::string get_relative_path(std::string abs_path)
 	return result;
 }
 
+static bool comp(const std::string& s1, const std::string& s2)
+{
+	std::string sr1 = get_relative_path(s1);
+	std::string sr2 = get_relative_path(s2);
+
+	return sr1 < sr2;
+}
+
 void Program::start()
 {
 	system("clear");
@@ -35,7 +43,11 @@ void Program::start()
 		if(command == "exit") break;
 		else if(command == "add") add(commands);
 		else if(command == "remove") remove(commands);
-		else if(command == "compare") compare(commands);
+		else if(command == "compare") 
+		{
+			if(!compare(commands))
+				std::cout << "two files are same..." << std::endl;
+		}
 		else if(command == "recover") recover(commands);
 		else if(command == "list") list(commands);
 		else if(command == "clear") system("clear");
@@ -453,8 +465,20 @@ int Program::compare(const std::vector<std::string>& cmds)
 		return 1;
 	}
 
+	std::string tmp = "";
+	std::string c1 = "",c2 = "";
 	std::filesystem::path target1 = std::filesystem::absolute(file_name1);
 	std::filesystem::path target2 = std::filesystem::absolute(file_name2);
+	std::ifstream file1_contents(target1,std::ifstream::in);
+	std::ifstream file2_contents(target2,std::ifstream::in);
+
+	while(getline(file1_contents,tmp) && c1.length() <= 1024*1024) // 1MB까지 내용이 같으면 같다고 판단
+		c1 += tmp;
+	while(getline(file2_contents,tmp) && c2.length() <= 1024*1024)
+		c2 += tmp;
+
+	file1_contents.close();
+	file2_contents.close();
 
 	auto file1_size = std::filesystem::file_size(target1);
 	auto file2_size = std::filesystem::file_size(target2);
@@ -465,17 +489,16 @@ int Program::compare(const std::vector<std::string>& cmds)
 	if(lstat(target2.string().c_str(),&file2_stat_buf) < 0)
 		return 1;
 
-	if(file1_size == file2_size && file1_stat_buf.st_mtime == file2_stat_buf.st_mtime)
-	{
-		std::cout << "two files are same..." << std::endl;
+	if(file1_size == file2_size && c1 == c2)
 		return 0;
-	}
-	
+
+	/*
 	std::cout << "file1 : [size : " << file1_size << " bytes]" 
 		<< ", mtime : " << ctime(&file1_stat_buf.st_mtime);
 	std::cout << "file2 : [size : " << file2_size << " bytes]" 
 		<< ", mtime : " << ctime(&file2_stat_buf.st_mtime);
-	return 0;
+	*/
+	return 1;
 }
 
 int Program::recover(const std::vector<std::string>& cmds)
@@ -529,7 +552,6 @@ int Program::recover(const std::vector<std::string>& cmds)
 	for(const auto& backup_file : backup_files)
 	{
 		std::string tmp = get_relative_path(backup_file);
-		tmp = tmp.substr(file_name.length()+1);
 		std::cout << idx++ << ". " << tmp << " ";
 		std::cout << "[" << std::filesystem::file_size(backup_file) << " bytes]" << std::endl;
 	}
@@ -594,18 +616,22 @@ void Program::scan_backup_directory(const std::string& file_name, std::vector<st
 {
 	std::filesystem::path backup(std::filesystem::current_path()/"BACKUP");
 	std::filesystem::directory_iterator dit(backup);
+	std::vector<std::string> v = {"compare",file_name};
 
 	while(dit != std::filesystem::end(dit))
 	{
 		std::filesystem::directory_entry entry = *dit;
 		std::string entry_relative_path = get_relative_path(entry.path().string());
+		v.push_back(entry.path().string());
 
-		if(entry_relative_path.substr(0,file_name.length()) != file_name)
+		if(compare(v) != 0)
 		{
 			dit++;
+			v.pop_back();
 			continue;
 		}
-
+		
+		v.pop_back();
 		backup_files.push_back(entry.path());
 		dit++;
 	}
@@ -615,6 +641,7 @@ std::vector<std::string> Program::get_backup_files(const std::string& file_name)
 {
 	std::vector<std::string> backup_files;
 	scan_backup_directory(file_name, backup_files);
+	std::sort(backup_files.begin(),backup_files.end(),comp);
 	return backup_files;
 }
 
