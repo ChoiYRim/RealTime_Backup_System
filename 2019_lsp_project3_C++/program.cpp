@@ -1,5 +1,19 @@
 #include "header.h"
 
+static std::string get_relative_path(std::string abs_path)
+{
+	std::string result = "";
+
+	while(abs_path.length() > 0 && abs_path.back() != '/')
+	{
+		result.push_back(abs_path.back());
+		abs_path.pop_back();
+	}
+
+	std::reverse(result.begin(),result.end());
+	return result;
+}
+
 void Program::start()
 {
 	system("clear");
@@ -66,7 +80,8 @@ bool Program::spawn_worker(int types, const std::vector<std::string>& cmds)
 		if(cmds.size() < 3)
 			return false;
 
-		if(!get_add_options(period, option, maximum_file_numbers, store_time, path, cmds)) return false;
+		if(!get_add_options(period, option, maximum_file_numbers, store_time, path, cmds)) 
+			return false;
 
 		// if option d
 		if(option & option_ad)
@@ -75,10 +90,15 @@ bool Program::spawn_worker(int types, const std::vector<std::string>& cmds)
 		if(_table.find(path.string()) != _table.end())
 			return true;
 	
-		if(path.string().length() > 255) return false;
-		std::thread thread(Worker(path, period, option, maximum_file_numbers, store_time,"add"));
+		if(path.string().length() > 255) 
+			return false;
+
+		Worker worker(path, period, option, maximum_file_numbers, store_time, "add");
+		//std::thread thread(Worker(path, period, option, maximum_file_numbers, store_time,"add"));
+		std::thread thread(worker);
 		_table[path.string()] = thread.native_handle();
 		_info[path.string()] = Info{period,option,maximum_file_numbers,store_time};
+		_workers[path.string()] = worker;
 		thread.detach();
 	}
 
@@ -104,7 +124,10 @@ bool Program::get_add_options(int& period,int& option,int& maximum_file_numbers,
 	if(cmds[1] == "-d")
 	{
 		if(cmds.size() < 4)
+		{
+			std::cerr << "invalid commands..." << std::endl;
 			return false;
+		}
 
 		path = std::filesystem::path(cmds[2]);
 		if(std::filesystem::exists(path) != true)
@@ -117,12 +140,9 @@ bool Program::get_add_options(int& period,int& option,int& maximum_file_numbers,
 			std::cerr << "file is not a directory..." << std::endl;
 			return false;
 		}
-		if(path.string() == ".")
-			path = std::filesystem::current_path();
-		else if(path.string() == "..")
-			path = path.parent_path();
 
 		path = std::filesystem::absolute(path);
+
 		for(auto i = 0; i < cmds[3].length(); i++)
 		{
 			if(cmds[3][i] < '0' || cmds[3][i] > '9')
@@ -155,34 +175,62 @@ bool Program::get_add_options(int& period,int& option,int& maximum_file_numbers,
 				else if(cmd[1] == 'n')
 				{
 					option |= option_an;
-					if(i+1 >= cmds.size()) return false;
+					if(i+1 >= cmds.size())
+					{
+						std::cerr << "invalid commands..." << std::endl;
+						return false;
+					}
 					for(auto j = 0; j < cmds[i+1].length(); j++)
-						if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') return false;
+					{
+						if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') 
+						{
+							std::cerr << "invalid commands..." << std::endl;
+							return false;
+						}
+					}
 					maximum_file_numbers = stoi(cmds[i+1]);
 					if(maximum_file_numbers <= 0)
+					{
+						std::cerr << "invalid commands..." << std::endl;
 						return false;
+					}
 					i++;
 				}
 				else if(cmd[1] == 't')
 				{
 					option |= option_at;
-					if(i+1 >= cmds.size()) return false;
+					if(i+1 >= cmds.size()) 
+					{
+						std::cerr << "invalid commands..." << std::endl;
+						return false;
+					}
 					for(auto j = 0; j < cmds[i+1].length(); j++)
-						if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') return false;
+					{
+						if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9')
+						{
+							std::cerr << "invalid commands..." << std::endl;
+							return false;
+						}
+					}
 					store_time = stoi(cmds[i+1]);
 					i++;
 				}
 			}
 			else
+			{
+				std::cerr << "invalid commands..." << std::endl;
 				return false;
+			}
 		}
-
 		return true;
 	}
 
 	path = std::filesystem::path(cmds[1]);
 	if(std::filesystem::exists(path) != true)
+	{
+		std::cerr << "file does not exist..." << std::endl;
 		return false;
+	}
 
 	path = std::filesystem::absolute(path);
 	for(auto i = 0; i < cmds[2].length(); i++)
@@ -216,35 +264,72 @@ bool Program::get_add_options(int& period,int& option,int& maximum_file_numbers,
 			else if(cmd[1] == 'n')
 			{
 				option |= option_an;
-				if(i+1 >= cmds.size()) return false;
+				if(i+1 >= cmds.size()) 
+				{
+					std::cerr << "invalid commands..." << std::endl;
+					return false;
+				}
 				for(auto j = 0; j < cmds[i+1].length(); j++)
-					if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') return false;
+				{
+					if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') 
+					{
+						std::cerr << "invalid commands..." << std::endl;
+						return false;
+					}
+				}
 				maximum_file_numbers = stoi(cmds[i+1]);
 				if(maximum_file_numbers <= 0)
+				{
+					std::cerr << "invalid commands..." << std::endl;
 					return false;
+				}
 				i++;
 			}
 			else if(cmd[1] == 't')
 			{
 				option |= option_at;
-				if(i+1 >= cmds.size()) return false;
+				if(i+1 >= cmds.size()) 
+				{
+					std::cerr << "invalid commands..." << std::endl;
+					return false;
+				}
 				for(auto j = 0; j < cmds[i+1].length(); j++)
-					if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') return false;
+				{
+					if(cmds[i+1][j] < '0' || cmds[i+1][j] > '9') 
+					{
+						std::cerr << "invalid commands..." << std::endl;
+						return false;
+					}
+				}
 				store_time = stoi(cmds[i+1]);
 				i++;
 			}
 			else
 			{
 				option |= option_ad;
-				if(std::filesystem::is_directory(path) != true) return false;
+				if(std::filesystem::is_directory(path) != true) 
+				{
+					std::cerr << "invalid commands..." << std::endl;
+					return false;
+				}
 			}
 		}
 		else
+		{
+			std::cerr << "invalid commands..." << std::endl;
 			return false;
+		}
 	}
 	
 	if(!(option & option_ad))
-		if(std::filesystem::is_regular_file(path) != true) return false;
+	{
+		if(std::filesystem::is_regular_file(path) != true) 
+		{
+			std::cerr << "file is not a regular file..." << std::endl;
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -268,15 +353,18 @@ bool Program::add_directory(const std::filesystem::path& path,int& period,int& o
 				continue;
 			}
 
-			//std::cout << entry.path() << std::endl;
-			std::thread thread(Worker(entry.path(), period, option, maximum_file_numbers, store_time,"add"));
+			Worker worker(entry.path(), period, option, maximum_file_numbers, store_time, "add");
+			
+			std::thread thread(worker);
 			_table[entry.path().string()] = thread.native_handle();
 			_info[entry.path().string()] = Info{period,option,maximum_file_numbers,store_time};
+			_workers[entry.path().string()] = worker;
 			thread.detach();
 		}
 		else if(std::filesystem::is_directory(entry))
 		{
-			if(!add_directory(entry, period, option, maximum_file_numbers, store_time)) return false;
+			if(!add_directory(entry, period, option, maximum_file_numbers, store_time)) 
+				return false;
 		}
 		dit++;
 	}
@@ -309,6 +397,7 @@ int Program::remove(const std::vector<std::string>& cmds)
 			erase_worker(ele);
 			_table.erase(ele);
 			_info.erase(ele);
+			_workers.erase(ele);
 		}
 
 		return 0;
@@ -336,6 +425,7 @@ int Program::remove(const std::vector<std::string>& cmds)
 	erase_worker(target.string());
 	_table.erase(target.string());
 	_info.erase(target.string());
+	_workers.erase(target.string());
 	return 0;
 }
 
@@ -387,7 +477,139 @@ int Program::compare(const std::vector<std::string>& cmds)
 
 int Program::recover(const std::vector<std::string>& cmds)
 {
+	if(cmds.size() != 2 && cmds.size() != 4)
+	{
+		std::cerr << "invalid commands..." << std::endl;
+		return 1;
+	}
+
+	std::string file_name = cmds[1];
+	std::string new_file = "";
+	
+	if(cmds.size() == 4)
+	{
+		if(cmds[2] != "-n")
+		{
+			std::cerr << "invalid commands..." << std::endl;
+			return 1;
+		}
+		new_file = cmds[3];
+	}
+
+	if(std::filesystem::exists(file_name) != true)
+	{
+		std::cerr << "file does not exist..." << std::endl;
+		return 1;
+	}
+	if(cmds.size() > 2 && std::filesystem::exists(new_file) == true)
+	{
+		std::cerr << new_file << " already exist..." << std::endl;
+		return 1;
+	}
+	if(std::filesystem::is_regular_file(file_name) != true)
+	{
+		std::cerr << "file is not a regular file..." << std::endl;
+		return 1;
+	}
+
+	int idx = 1;
+	int choose;
+	auto backup_files = get_backup_files(file_name);
+
+	if(backup_files.size() <= 0)
+	{
+		std::cerr << "there is no backup file..." << std::endl;
+		return 1;
+	}
+
+	std::cout << "0. exit" << std::endl;
+	for(const auto& backup_file : backup_files)
+	{
+		std::string tmp = get_relative_path(backup_file);
+		tmp = tmp.substr(file_name.length()+1);
+		std::cout << idx++ << ". " << tmp << std::endl;
+	}
+	std::cout << "Choose file to recover : ";
+	std::cin >> choose;
+	getchar();
+
+	if(choose == 0 || choose-1 >= backup_files.size())
+		return 0;
+
+	std::string target = backup_files[choose-1];
+	std::ifstream from(target);
+	std::string contents = "";
+
+	if(from.is_open() != true)
+	{
+		std::cerr << "failed to open " << target << std::endl;
+		return 1;
+	}
+
+	if(new_file.length() > 0)
+	{
+		std::ofstream to(new_file);
+		if(to.is_open())
+		{
+			while(getline(from,contents))
+				to << contents << '\n';
+			to.close();
+		}
+		else
+		{
+			std::cerr << "failed to open " << new_file << std::endl;
+			from.close();
+			return 1;
+		}
+
+		from.close();
+		return 0;
+	}
+
+	std::ofstream to(file_name);
+	if(to.is_open())
+	{
+		while(getline(from,contents))
+			to << contents << '\n';
+		to.close();
+	}
+	else
+	{
+		std::cerr << "failed to open " << file_name << std::endl;
+		from.close();
+		return 1;
+	}
+
+	from.close();
 	return 0;
+}
+
+void Program::scan_backup_directory(const std::string& file_name, std::vector<std::string>& backup_files)
+{
+	std::filesystem::path backup(std::filesystem::current_path()/"BACKUP");
+	std::filesystem::directory_iterator dit(backup);
+
+	while(dit != std::filesystem::end(dit))
+	{
+		std::filesystem::directory_entry entry = *dit;
+		std::string entry_relative_path = get_relative_path(entry.path().string());
+
+		if(entry_relative_path.substr(0,file_name.length()) != file_name)
+		{
+			dit++;
+			continue;
+		}
+
+		backup_files.push_back(entry.path());
+		dit++;
+	}
+}
+
+std::vector<std::string> Program::get_backup_files(const std::string& file_name) noexcept
+{
+	std::vector<std::string> backup_files;
+	scan_backup_directory(file_name, backup_files);
+	return backup_files;
 }
 
 int Program::list(const std::vector<std::string>& cmds) noexcept
@@ -433,6 +655,7 @@ void Program::general_command(const std::vector<std::string>& cmds)
 		std::cout << args;
 		memset((char *)args,0,sizeof(args));
 	}
+	std::cout << std::endl;
 }
 
 Program::~Program()

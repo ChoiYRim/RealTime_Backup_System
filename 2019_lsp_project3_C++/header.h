@@ -10,10 +10,10 @@
 #include <string>
 #include <vector>
 #include <chrono>
-#include <memory>
 #include <thread>
 #include <queue>
 #include <mutex>
+#include <deque>
 #include <list>
 
 #include <time.h>
@@ -72,6 +72,8 @@ class Program
 		int compare(const std::vector<std::string>& cmds);
 
 		int recover(const std::vector<std::string>& cmds);
+		void scan_backup_directory(const std::string& file_name, std::vector<std::string>& backup_files);
+		std::vector<std::string> get_backup_files(const std::string& file_name) noexcept;
 
 		int list(const std::vector<std::string>& cmds) noexcept;
 
@@ -85,6 +87,7 @@ class Program
 		void erase_worker(const std::string& file_name);
 		std::unordered_map<std::string,pthread_t> _table;
 		std::unordered_map<std::string,Info> _info;
+		std::unordered_map<std::string,Worker> _workers;
 };
 
 class Worker
@@ -99,12 +102,14 @@ class Worker
 		void operator()(); 
 
 		long long get_time(int&,int&,int&,int&,int&,int&);
+		std::vector<std::string> get_backup_files();
 
 		std::string get_backup_time(int&,int&,int&,int&,int&,int&);
 
 		virtual ~Worker() = default;
 
 	private:
+		std::queue<std::pair<std::filesystem::path,long long>> _q;
 		std::filesystem::path _absolute_path;
 		int _period;
 		int _option; // bit masking

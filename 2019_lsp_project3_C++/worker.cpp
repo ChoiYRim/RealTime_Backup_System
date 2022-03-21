@@ -2,7 +2,7 @@
 
 Worker::Worker(const std::filesystem::path& p,int period,int opt,int mfn,int st,std::string_view cmd) : _absolute_path(p), _period(period), _option(opt), _maximum_file_numbers(mfn), _time(st) { }
 
-std::string get_relative_path(std::string abs_path)
+static std::string get_relative_path(std::string abs_path)
 {
 	std::string result = "";
 	
@@ -60,7 +60,12 @@ void Worker::before_get_started(long long& start, const std::string& relative_pa
 	{
 		while(!v.empty())
 		{
-			std::string str_backup_time = get_relative_path(v.back()).substr(relative_path.length()+1);
+			std::string str_backup = get_relative_path(v.back());
+			int len = static_cast<int>(str_backup.length());
+			std::string str_backup_time = "";
+			for(int i = len-1; i >= 0 && str_backup[i] != '_'; i--) 
+				if(str_backup[i] >= '0' && str_backup[i] <= '9')
+					str_backup_time = str_backup_time + str_backup[i];
 			long long backup_time = stoll(str_backup_time);
 			int year,month,day,hour,minute,second;
 
@@ -96,6 +101,43 @@ void Worker::before_get_started(long long& start, const std::string& relative_pa
 			break;
 		}
 	}
+
+	for(int i = 0; i < v.size(); i++)
+	{		
+		std::string str_backup = get_relative_path(v[i]);
+		int len = static_cast<int>(str_backup.length());
+		std::string str_backup_time = "";
+		for(int i = len-1; i >= 0 && str_backup[i] != '_'; i--) 
+			if(str_backup[i] >= '0' && str_backup[i] <= '9')
+				str_backup_time = str_backup_time + str_backup[i];
+		long long backup_time = stoll(str_backup_time);
+		int year,month,day,hour,minute,second;
+
+		second = static_cast<int>(backup_time%100);
+		backup_time /= 100;
+
+		minute = static_cast<int>(backup_time%100);
+		minute *= 60;
+		backup_time /= 100;
+
+		hour = static_cast<int>(backup_time%100);
+		hour *= 60*60;
+		backup_time /= 100;
+
+		day = static_cast<int>(backup_time%100);
+		day *= 60*60*24;
+		backup_time /= 100;
+
+		month = static_cast<int>(backup_time%100);
+		month *= 60*60*24*30;
+		backup_time /= 100;
+
+		year = static_cast<int>(backup_time%100);
+		year *= 60*60*24*30*12;
+
+		backup_time = year+month+day+hour+minute+second;
+		_q.push({v[i],backup_time});
+	}
 }
 
 void Worker::operator()() // backup thread 
@@ -107,7 +149,6 @@ void Worker::operator()() // backup thread
 	int cur_year,cur_month,cur_day,cur_hour,cur_minute,cur_second;
 	auto init_mtime = std::filesystem::last_write_time(_absolute_path);
 	std::filesystem::path backup(std::filesystem::current_path()/"BACKUP");
-	std::queue<std::pair<std::filesystem::path,long long>> q; // [백업한 파일 이름, 백업한 시점]
 
 	cur_time = time(nullptr);
 	localtime_r(&cur_time,&cur_tm);
@@ -141,7 +182,7 @@ void Worker::operator()() // backup thread
 		if(start+static_cast<long long>(_period) <= cur)
 		{
 			int year = cur_year%100;
-			int q_size = static_cast<int>(q.size());
+			int q_size = static_cast<int>(_q.size());
 			std::string backup_time = "";
 			std::string file_name = "";
 
@@ -161,25 +202,25 @@ void Worker::operator()() // backup thread
 			
 			if(_option & option_an) // 백업한 파일들의 최대 개수 (최근 maximum_file_numbers 개를 제외하곤 모두 삭제)
 			{
-				while(!q.empty() && q_size > _maximum_file_numbers)
+				while(!_q.empty() && q_size > _maximum_file_numbers)
 				{
-					auto file_path = q.front().first;
+					auto file_path = _q.front().first;
 					std::filesystem::remove(file_path);
-					q.pop();
+					_q.pop();
 				}
 			}
 			if(_option & option_at) // 보관한 시간이 _time을 넘어가면 삭제
 			{
-				while(!q.empty())
+				while(!_q.empty())
 				{
-					auto file_path = q.front().first;
-					auto store_time = q.front().second;
+					auto file_path = _q.front().first;
+					auto store_time = _q.front().second;
 					long long diff = cur-store_time;
 
 					if(diff > static_cast<long long>(_time))
 					{
 						std::filesystem::remove(file_path);
-						q.pop();
+						_q.pop();
 						continue;
 					}
 					break;
@@ -189,6 +230,7 @@ void Worker::operator()() // backup thread
 			// TODO : logger
 			try {
 				std::filesystem::copy_file(_absolute_path,file_name);
+				//	
 			} catch(std::filesystem::filesystem_error & e)
 			{
 				// logger error message
@@ -196,7 +238,7 @@ void Worker::operator()() // backup thread
 				continue;
 			}
 
-			q.push({file_name,cur});
+			_q.push({file_name,cur});
 			start = start+_period;
 		}
 	}
@@ -216,6 +258,20 @@ long long Worker::get_time(int& year,int& month,int& day,int& hour,int& minute,i
 	result += second;
 
 	return result;
+}
+
+std::vector<std::string> Worker::get_backup_files()
+{
+	auto temp_q = _q;
+	std::vector<std::string> v;
+	
+	while(!temp_q.empty())
+	{
+		v.push_back(temp_q.front().first.string());
+		temp_q.pop();
+	}
+
+	return v;
 }
 
 std::string Worker::get_backup_time(int& year,int& month,int& day,int& hour,int& minute,int& second)
